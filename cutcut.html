@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cutcut</title>
+<style>
+  :root {
+    --bg: #16181d; --panel: #1f232a; --line: #2d323b; --text: #e6e8eb; --muted: #9aa1ab;
+    --wave: #6fa8dc; --wave-off: #3a4350; --start: #3ccf7a; --end: #ff5a5a; --head: #ffd24a;
+    --accent: #3d7bd9;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+  #info { color: var(--muted); }
+  main { padding: 16px; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 12px; font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .4; cursor: default; }
+  button * { pointer-events: none; }   /* il clic arriva sempre al bottone, anche sopra la scritta */
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .canvas-wrap { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  #overview { display: block; width: 100%; height: 56px; cursor: pointer; }
+  #wave, #overview { touch-action: none; user-select: none; -webkit-user-select: none; }
+  #wave { display: block; width: 100%; height: 260px; cursor: crosshair; }
+  #drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 16px; text-align: center; padding: 16px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+  .group { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; }
+  .group label { color: var(--muted); }
+  input[type=text] { width: 96px; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 5px 6px; font: 14px ui-monospace, Menlo, monospace; }
+  input[type=range] { width: 200px; }
+  .mono { font-family: ui-monospace, Menlo, monospace; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  #status { color: var(--muted); min-height: 20px; }
+  #status.err { color: var(--end); }
+  .spacer { flex: 1; }
+  body.dragover .canvas-wrap { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>cutcut <span style="font-size:12px;color:var(--muted);font-weight:normal">v1.12</span></h1>
+  <button id="openBtn" class="primary">Apri MP3</button>
+  <input id="fileInput" type="file" accept=".mp3,audio/mpeg" hidden>
+  <span id="info">Nessun file aperto</span>
+</header>
+<main>
+  <div class="canvas-wrap" style="margin-bottom:8px"><canvas id="overview"></canvas></div>
+  <div class="canvas-wrap">
+    <canvas id="wave"></canvas>
+    <div id="drop">Trascina qui un file MP3 oppure clicca “Apri MP3”</div>
+  </div>
+
+  <div class="row">
+    <button id="playBtn" disabled style="min-width:90px"><span id="playLbl">▶ Play</span></button>
+    <div class="group"><label>Cursore</label><span id="posLabel" class="mono">00:00.000</span></div>
+    <div class="group">
+      <label>Zoom</label>
+      <input id="zoom" type="range" min="0" max="1000" value="0" disabled>
+      <span id="zoomLabel" class="mono">—</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="group">
+      <span class="dot" style="background:var(--start)"></span><label>Inizio</label>
+      <input id="startIn" type="text" value="00:00.000" disabled>
+      <button id="startFromHead" disabled title="Metti l'inizio dove si trova il cursore">Segna l'inizio</button>
+      <button id="startGo" disabled title="Mostra l'inizio">Vai</button>
+    </div>
+    <div class="group">
+      <span class="dot" style="background:var(--end)"></span><label>Fine</label>
+      <input id="endIn" type="text" value="00:00.000" disabled>
+      <button id="endFromHead" disabled title="Metti la fine dove si trova il cursore">Segna la fine</button>
+      <button id="endGo" disabled title="Mostra la fine">Vai</button>
+    </div>
+    <div class="group"><label>Durata finale</label><span id="durLabel" class="mono">—</span></div>
+    <div class="spacer"></div>
+    <button id="saveBtn" class="primary" disabled>Salva MP3 tagliato</button>
+  </div>
+  <div id="status"></div>
+</main>
+
+<script>
+"use strict";
+/* ================= MP3 parsing (taglio senza ricodifica) ================= */
+const BITRATES = { 1: [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0],
+                   2: [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0] };
+const SRATES = { 3: [44100,48000,32000], 2: [22050,24000,16000], 0: [11025,12000,8000] };
+
+function parseHeader(b, i) {
+  if (i + 4 > b.length || b[i] !== 0xFF || (b[i+1] & 0xE0) !== 0xE0) return null;
+  const ver = (b[i+1] >> 3) & 3, layer = (b[i+1] >> 1) & 3;
+  if (ver === 1 || layer !== 1) return null;               // solo MPEG Layer III
+  const brIdx = b[i+2] >> 4, srIdx = (b[i+2] >> 2) & 3, pad = (b[i+2] >> 1) & 1;
+  if (brIdx === 0 || brIdx === 15 || srIdx === 3) return null;
+  const mpeg1 = ver === 3;
+  const br = BITRATES[mpeg1 ? 1 : 2][brIdx] * 1000, sr = SRATES[ver][srIdx];
+  return { ver, sr, br, mpeg1, mono: (b[i+3] >> 6) === 3,
+           spf: mpeg1 ? 1152 : 576, len: Math.floor((mpeg1 ? 144 : 72) * br / sr) + pad };
+}
+const ascii = (b, i, n) => String.fromCharCode(...b.subarray(i, i + n));
+const u32 = (b, i) => ((b[i] << 24) | (b[i+1] << 16) | (b[i+2] << 8) | b[i+3]) >>> 0;
+function w32(b, i, v) { b[i] = v >>> 24; b[i+1] = (v >>> 16) & 255; b[i+2] = (v >>> 8) & 255; b[i+3] = v & 255; }
+function crc16(b, s, e) {           // CRC-16/ARC, usato dal tag LAME
+  let c = 0;
+  for (let i = s; i < e; i++) { c ^= b[i]; for (let k = 0; k < 8; k++) c = (c & 1) ? (c >>> 1) ^ 0xA001 : c >>> 1; }
+  return c;
+}
+
+function parseMp3(b) {
+  let pos = 0, id3End = 0;
+  if (ascii(b, 0, 3) === "ID3") {
+    const size = (b[6] << 21) | (b[7] << 14) | (b[8] << 7) | b[9];
+    id3End = 10 + size + ((b[5] & 0x10) ? 10 : 0);
+    pos = id3End;
+  }
+  // tag in coda (ID3v1 e APEv2): vengono conservati
+  let audioEnd = b.length;
+  if (audioEnd >= 128 && ascii(b, audioEnd - 128, 3) === "TAG") audioEnd -= 128;
+  if (audioEnd >= 32 && ascii(b, audioEnd - 32, 8) === "APETAGEX") {
+    const sz = b[audioEnd-20] | (b[audioEnd-19] << 8) | (b[audioEnd-18] << 16) | (b[audioEnd-17] << 24);
+    const hasHeader = (b[audioEnd-9] & 0x80) !== 0;
+    audioEnd = Math.max(0, audioEnd - sz - (hasHeader ? 32 : 0));
+  }
+  const offs = [], lens = [];
+  let first = null;
+  while (pos + 4 <= audioEnd) {
+    const h = parseHeader(b, pos);
+    const ok = h && pos + h.len <= audioEnd && (!first || (h.sr === first.sr && h.ver === first.ver)) &&
+      (first || pos + h.len + 4 > audioEnd || parseHeader(b, pos + h.len));
+    if (!ok) { pos++; continue; }      // risincronizza
+    if (!first) first = h;
+    offs.push(pos); lens.push(h.len);
+    pos += h.len;
+  }
+  if (!first) throw new Error("Nessun frame MP3 valido trovato.");
+  const lastEnd = offs[offs.length - 1] + lens[lens.length - 1];
+
+  // Header VBR (Xing/Info o VBRI) nel primo frame
+  let xing = null, vbri = false;
+  const f0 = offs[0];
+  const xo = f0 + 4 + (first.mpeg1 ? (first.mono ? 17 : 32) : (first.mono ? 9 : 17));
+  const tag = ascii(b, xo, 4);
+  if (tag === "Xing" || tag === "Info") xing = { off: f0, len: lens[0], xo };
+  else if (ascii(b, f0 + 36, 4) === "VBRI") vbri = true;
+  if (xing || vbri) { offs.shift(); lens.shift(); }
+
+  let bitSum = 0, cbr = true;
+  for (let i = 0; i < offs.length; i++) { const br = parseHeader(b, offs[i]).br; bitSum += br; if (br !== first.br) cbr = false; }
+  return { bytes: b, head: b.subarray(0, id3End), tail: b.subarray(Math.max(lastEnd, audioEnd)),
+           offs, lens, sr: first.sr, spf: first.spf, xing, vbri,
+           avgKbps: Math.round(bitSum / offs.length / 1000), cbr };
+}
+
+// Crea il nuovo file con i frame [i0, i1)
+function buildCut(m, i0, i1) {
+  const parts = [];
+  if (m.head.length) parts.push(m.head);
+  const aStart = m.offs[i0], aEnd = m.offs[i1-1] + m.lens[i1-1];
+  const audio = m.bytes.subarray(aStart, aEnd);
+  if (m.xing) {
+    const x = m.bytes.slice(m.xing.off, m.xing.off + m.xing.len); // copia
+    const xo = m.xing.xo - m.xing.off, n = i1 - i0, total = x.length + audio.length;
+    const flags = u32(x, xo + 4);
+    let p = xo + 8;
+    if (flags & 1) { w32(x, p, n); p += 4; }
+    if (flags & 2) { w32(x, p, total); p += 4; }
+    if (flags & 4) {
+      for (let k = 0; k < 100; k++) {
+        const fi = i0 + Math.min(n - 1, Math.floor(k * n / 100));
+        x[p + k] = Math.min(255, Math.floor(256 * (x.length + m.offs[fi] - aStart) / total));
+      }
+      p += 100;
+    }
+    if (flags & 8) p += 4;
+    // Tag LAME: aggiorna ritardo/padding, lunghezza e CRC (solo se il CRC originale è valido)
+    if (p + 36 <= x.length && crc16(x, 0, p + 34) === ((x[p+34] << 8) | x[p+35])) {
+      let delay = (x[p+21] << 4) | (x[p+22] >> 4), padding = ((x[p+22] & 15) << 8) | x[p+23];
+      if (i0 > 0) delay = 0;
+      if (i1 < m.offs.length) padding = 0;
+      x[p+21] = delay >> 4; x[p+22] = ((delay & 15) << 4) | (padding >> 8); x[p+23] = padding & 255;
+      w32(x, p + 28, total);
+      const c = crc16(x, 0, p + 34); x[p+34] = c >> 8; x[p+35] = c & 255;
+    }
+    parts.push(x);
+  }
+  parts.push(audio);
+  if (m.tail.length) parts.push(m.tail);
+  return new Blob(parts, { type: "audio/mpeg" });
+}
+
+/* ================= Stato e interfaccia ================= */
+const $ = id => document.getElementById(id);
+const S = { file: null, mp3: null, buf: null, peaks: null, T: 0, frameDur: 0,
+            start: 0, end: 0, head: 0, viewStart: 0, viewDur: 1,
+            ctx: null, src: null, playing: false, playT0: 0, playFrom: 0 };
+const BIN = 256, MIN_VIEW = 0.5;
+
+function fmt(t) {
+  t = Math.max(0, t);
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return String(m).padStart(2, "0") + ":" + s.toFixed(3).padStart(6, "0");
+}
+function parseTime(str) {
+  str = str.trim().replace(",", ".");
+  const p = str.split(":");
+  let t = NaN;
+  if (p.length === 1) t = parseFloat(p[0]);
+  else if (p.length === 2) t = parseInt(p[0], 10) * 60 + parseFloat(p[1]);
+  else if (p.length === 3) t = parseInt(p[0], 10) * 3600 + parseInt(p[1], 10) * 60 + parseFloat(p[2]);
+  return isFinite(t) ? t : null;
+}
+const snap = t => Math.min(S.T, Math.max(0, Math.round(t / S.frameDur) * S.frameDur));
+function status(msg, err) { const el = $("status"); el.textContent = msg || ""; el.className = err ? "err" : ""; }
+
+async function loadFile(file) {
+  if (!file) return;
+  stop();
+  status("Caricamento di " + file.name + "…");
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const mp3 = parseMp3(bytes);
+    S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await new Promise((res, rej) => S.ctx.decodeAudioData(bytes.slice().buffer, res, rej));
+    Object.assign(S, { file, mp3, buf, peaks: makePeaks(buf), frameDur: mp3.spf / mp3.sr });
+    S.T = mp3.offs.length * S.frameDur;
+    S.start = 0; S.end = S.T; S.head = 0; S.viewStart = 0; S.viewDur = S.T;
+    $("zoom").value = 0;
+    $("info").textContent = `${file.name} · ${fmt(S.T)} · ${mp3.cbr ? "" : "VBR ~"}${mp3.avgKbps} kbps · ${(mp3.sr/1000).toFixed(1)} kHz`;
+    $("drop").style.display = "none";
+    document.querySelectorAll("button, input").forEach(el => el.disabled = false);
+    status("Trascina i marker verde (inizio) e rosso (fine) dall'etichetta in alto o dalla maniglia in basso. Clicca sulla forma d'onda per spostare il cursore di ascolto.");
+    updateUI();
+  } catch (e) {
+    console.error(e);
+    status("Impossibile aprire il file: " + (e.message || e), true);
+  }
+}
+
+function makePeaks(buf) {
+  const n = Math.ceil(buf.length / BIN), min = new Float32Array(n), max = new Float32Array(n);
+  min.fill(1); max.fill(-1);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < d.length; i++) {
+      const j = (i / BIN) | 0, v = d[i];
+      if (v < min[j]) min[j] = v;
+      if (v > max[j]) max[j] = v;
+    }
+  }
+  return { min, max };
+}
+
+/* ----- disegno ----- */
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function fitCanvas(cv) {
+  const r = window.devicePixelRatio || 1, w = Math.round(cv.clientWidth * r), h = Math.round(cv.clientHeight * r);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  return r;
+}
+function drawWave(g, W, H, t0, dur, colorIn, colorOut) {
+  const buf = S.buf, rate = buf.sampleRate, spp = dur * rate / W, mid = H / 2;
+  const chans = []; for (let c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
+  for (let x = 0; x < W; x++) {
+    const a = (t0 * rate) + x * spp, bnd = a + spp;
+    let lo = 1, hi = -1;
+    if (spp >= BIN) {
+      const j0 = Math.max(0, Math.floor(a / BIN)), j1 = Math.min(S.peaks.min.length, Math.ceil(bnd / BIN));
+      for (let j = j0; j < j1; j++) { if (S.peaks.min[j] < lo) lo = S.peaks.min[j]; if (S.peaks.max[j] > hi) hi = S.peaks.max[j]; }
+    } else {
+      const i0 = Math.max(0, Math.floor(a)), i1 = Math.min(buf.length, Math.max(i0 + 1, Math.ceil(bnd)));
+      for (const d of chans) for (let i = i0; i < i1; i++) { if (d[i] < lo) lo = d[i]; if (d[i] > hi) hi = d[i]; }
+    }
+    if (hi < lo) continue;
+    const t = t0 + (x + .5) * dur / W;
+    g.fillStyle = (t >= S.start && t <= S.end) ? colorIn : colorOut;
+    const y1 = mid - hi * mid * .95, y2 = mid - lo * mid * .95;
+    g.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+}
+function drawMain() {
+  const cv = $("wave"), r = fitCanvas(cv), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  if (!S.buf) return;
+  const rulerH = 20 * r, wH = H - rulerH, t0 = S.viewStart, dur = S.viewDur;
+  const X = t => (t - t0) / dur * W;
+  // zone tagliate
+  g.fillStyle = "rgba(0,0,0,.35)";
+  if (S.start > t0) g.fillRect(0, 0, X(S.start), wH);
+  if (S.end < t0 + dur) g.fillRect(X(S.end), 0, W - X(S.end), wH);
+  drawWave(g, W, wH, t0, dur, css("--wave"), css("--wave-off"));
+  // righello
+  g.fillStyle = css("--line"); g.fillRect(0, wH, W, 1);
+  const steps = [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,15,30,60,120,300,600];
+  const step = steps.find(s => s / dur * W >= 90 * r) || 600;
+  g.fillStyle = css("--muted"); g.font = `${11 * r}px ui-monospace, Menlo, monospace`; g.textBaseline = "middle";
+  for (let t = Math.ceil(t0 / step) * step; t <= t0 + dur; t += step) {
+    const x = Math.round(X(t)); g.fillRect(x, wH, 1, 5 * r);
+    const lbl = step < 1 ? fmt(t) : fmt(t).slice(0, 5);
+    g.fillText(lbl, x + 3 * r, wH + rulerH / 2 + 2 * r);
+  }
+  // marker
+  const marker = (t, color, label, right) => {
+    const x = Math.round(X(t)); if (x < -50 || x > W + 50) return;
+    g.fillStyle = color; g.fillRect(x - r, 0, 2 * r, wH);
+    g.font = `bold ${11 * r}px -apple-system, sans-serif`;
+    const tw = g.measureText(label).width + 10 * r, bx = right ? x - tw : x;
+    g.fillRect(bx, 0, tw, 18 * r);
+    // maniglia in basso, da trascinare
+    const hw = 14 * r, hh = 22 * r, hx = right ? x - hw : x;
+    g.fillRect(hx, wH - hh, hw, hh);
+    g.fillStyle = "#111"; g.fillText(label, bx + 5 * r, 9 * r);
+    g.fillRect(hx + 4 * r, wH - hh + 6 * r, r, hh - 12 * r);
+    g.fillRect(hx + 8 * r, wH - hh + 6 * r, r, hh - 12 * r);
+  };
+  marker(S.start, css("--start"), "INIZIO", false);
+  marker(S.end, css("--end"), "FINE", true);
+  const hx = X(S.head);
+  if (hx >= 0 && hx <= W) { g.fillStyle = css("--head"); g.fillRect(Math.round(hx), 0, r, wH); }
+}
+function drawOverview() {
+  const cv = $("overview"), r = fitCanvas(cv), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  if (!S.buf) return;
+  drawWave(g, W, H, 0, S.T, css("--wave"), css("--wave-off"));
+  const X = t => t / S.T * W;
+  g.fillStyle = "rgba(255,255,255,.12)";
+  g.fillRect(X(S.viewStart), 0, Math.max(2 * r, X(S.viewDur)), H);
+  g.strokeStyle = "rgba(255,255,255,.5)"; g.lineWidth = r;
+  g.strokeRect(X(S.viewStart) + .5, .5, Math.max(2 * r, X(S.viewDur)) - 1, H - 1);
+  g.fillStyle = css("--start"); g.fillRect(X(S.start), 0, 2 * r, H);
+  g.fillStyle = css("--end"); g.fillRect(X(S.end) - 2 * r, 0, 2 * r, H);
+  g.fillStyle = css("--head"); g.fillRect(X(S.head), 0, r, H);
+}
+let rafPending = false;
+function updateUI() {
+  if (rafPending) return; rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    drawMain(); drawOverview();
+    if (!S.buf) return;
+    if (document.activeElement !== $("startIn")) $("startIn").value = fmt(S.start);
+    if (document.activeElement !== $("endIn")) $("endIn").value = fmt(S.end);
+    $("durLabel").textContent = fmt(S.end - S.start);
+    $("posLabel").textContent = fmt(S.head);
+    $("zoomLabel").textContent = "finestra " + (S.viewDur >= 10 ? fmt(S.viewDur).slice(0, 5) : S.viewDur.toFixed(2) + " s");
+    const lbl = isPlaying() ? "❚❚ Pausa" : "▶ Play";      // aggiorna solo se cambia (altrimenti Safari perde il clic)
+    if ($("playLbl").textContent !== lbl) $("playLbl").textContent = lbl;
+  });
+}
+
+/* ----- vista e zoom ----- */
+function setView(start, dur) {
+  S.viewDur = Math.min(S.T, Math.max(Math.min(MIN_VIEW, S.T), dur));
+  S.viewStart = Math.min(S.T - S.viewDur, Math.max(0, start));
+  updateUI();
+}
+function zoomToSlider() {
+  const z = $("zoom").value / 1000, minD = Math.min(MIN_VIEW, S.T);
+  const dur = S.T * Math.pow(minD / S.T, z);
+  const anchor = (S.head >= S.viewStart && S.head <= S.viewStart + S.viewDur) ? S.head : S.viewStart + S.viewDur / 2;
+  const frac = (anchor - S.viewStart) / S.viewDur;
+  setView(anchor - frac * dur, dur);
+}
+function sliderFromView() {
+  const minD = Math.min(MIN_VIEW, S.T);
+  $("zoom").value = S.T > minD ? Math.round(1000 * Math.log(S.viewDur / S.T) / Math.log(minD / S.T)) : 0;
+}
+function centerOn(t) { setView(t - S.viewDur / 2, S.viewDur); }
+function goTo(t) {          // mostra il punto e ci porta anche il cursore di ascolto
+  centerOn(t);               // lo zoom resta quello scelto
+  seek(t);
+}
+
+/* ----- interazione con la forma d'onda ----- */
+const wave = $("wave");
+let drag = null;
+function evTime(e) {
+  const rc = wave.getBoundingClientRect();
+  return S.viewStart + (e.clientX - rc.left) / rc.width * S.viewDur;
+}
+function hitMarker(e) {
+  const rc = wave.getBoundingClientRect(), px = e.clientX - rc.left, py = e.clientY - rc.top;
+  const X = t => (t - S.viewStart) / S.viewDur * rc.width;
+  const xs = X(S.start), xe = X(S.end), waveH = rc.height - 20;
+  const inFlag = (x, right) => {           // etichetta in alto (circa 60 px) o maniglia in basso (14 px)
+    if (py <= 18) return right ? (px >= x - 60 && px <= x + 4) : (px >= x - 4 && px <= x + 60);
+    if (py >= waveH - 22 && py <= waveH) return right ? (px >= x - 16 && px <= x + 4) : (px >= x - 4 && px <= x + 16);
+    return false;
+  };
+  if (inFlag(xs, false)) return "start";
+  if (inFlag(xe, true)) return "end";
+  const ds = Math.abs(px - xs), de = Math.abs(px - xe);
+  if (Math.min(ds, de) > 10) return null;
+  return ds <= de ? "start" : "end";
+}
+function dragTo(e) {
+  // se si trascina oltre il bordo della finestra, la vista scorre
+  const rc = wave.getBoundingClientRect();
+  if (e.clientX < rc.left) setView(S.viewStart - S.viewDur * 0.02, S.viewDur);
+  else if (e.clientX > rc.right) setView(S.viewStart + S.viewDur * 0.02, S.viewDur);
+  const t = snap(Math.min(S.viewStart + S.viewDur, Math.max(S.viewStart, evTime(e))));
+  if (drag.what === "start") S.start = Math.min(t, S.end - S.frameDur);
+  else S.end = Math.max(t, S.start + S.frameDur);
+  updateUI();
+}
+wave.addEventListener("pointerdown", e => {
+  if (!S.buf) return;
+  e.preventDefault();
+  wave.setPointerCapture(e.pointerId);
+  drag = { what: hitMarker(e), moved: false, x: e.clientX };
+  if (drag.what) wave.style.cursor = "grabbing";
+});
+wave.addEventListener("pointermove", e => {
+  if (!S.buf) return;
+  if (!drag) { wave.style.cursor = hitMarker(e) ? "ew-resize" : "crosshair"; return; }
+  if (Math.abs(e.clientX - drag.x) > 2) drag.moved = true;
+  if (!drag.what || !drag.moved) return;
+  dragTo(e);
+});
+const endDrag = e => {
+  if (!S.buf || !drag) return;
+  if (!drag.moved && !drag.what) seek(Math.min(S.T, Math.max(0, evTime(e))));
+  else if (drag.moved && drag.what) seek(drag.what === "start" ? S.start : S.end);   // il cursore va sul marker spostato
+  drag = null;
+  wave.style.cursor = hitMarker(e) ? "ew-resize" : "crosshair";
+};
+wave.addEventListener("pointerup", endDrag);
+wave.addEventListener("pointercancel", endDrag);
+wave.addEventListener("wheel", e => {
+  if (!S.buf) return;
+  e.preventDefault();
+  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  setView(S.viewStart + d / wave.clientWidth * S.viewDur, S.viewDur);
+}, { passive: false });
+
+const ov = $("overview");
+let ovDrag = false;
+const ovTime = e => { const rc = ov.getBoundingClientRect(); return (e.clientX - rc.left) / rc.width * S.T; };
+ov.addEventListener("pointerdown", e => { if (!S.buf) return; ovDrag = true; ov.setPointerCapture(e.pointerId); centerOn(ovTime(e)); });
+ov.addEventListener("pointermove", e => { if (ovDrag) centerOn(ovTime(e)); });
+ov.addEventListener("pointerup", () => ovDrag = false);
+
+/* ----- riproduzione ----- */
+// Riproduzione dall'audio già decodificato (Web Audio): la posizione è esatta al campione.
+// Il lettore <audio> di Safari, sugli MP3, salta a posizioni stimate e quindi sfasate.
+let src = null, playFrom = 0, playT0 = 0;
+function isPlaying() { return !!src; }
+function curPos() { return src ? Math.min(S.T, playFrom + (S.ctx.currentTime - playT0)) : S.head; }
+function play(fromButton) {
+  if (!S.buf || src) return;
+  if (fromButton && S.head >= S.T - 0.01) S.head = S.start;   // a fine file, Play riparte dall'inizio del taglio
+  if (S.ctx.state !== "running") S.ctx.resume();      // chiamato dentro il clic: Safari lo permette
+  const s = S.ctx.createBufferSource();
+  s.buffer = S.buf;
+  s.connect(S.ctx.destination);
+  s.onended = () => { if (src === s) { S.head = S.T; src = null; S.playing = false; updateUI(); } };
+  playFrom = S.head; playT0 = S.ctx.currentTime;
+  s.start(0, Math.min(S.head, S.buf.duration - 0.001));
+  src = s; S.playing = true;
+  updateUI(); tick();
+}
+function stop() {
+  if (!src) return;
+  S.head = curPos();
+  const s = src; src = null; S.playing = false;
+  s.onended = null;
+  try { s.stop(); } catch (_) {}
+  try { s.disconnect(); } catch (_) {}
+  updateUI();
+}
+function togglePlay() { if (isPlaying()) stop(); else play(true); }
+function seek(t) {
+  const was = isPlaying();
+  stop();
+  S.head = t;
+  if (was) play(); else updateUI();
+}
+function tick() {
+  if (!isPlaying()) { S.playing = false; updateUI(); return; }
+  S.head = Math.min(S.T, curPos());
+  if (S.head > S.viewStart + S.viewDur || S.head < S.viewStart) setView(S.head - S.viewDur * 0.05, S.viewDur);
+  updateUI();
+  requestAnimationFrame(tick);
+}
+
+/* ----- salvataggio ----- */
+async function save() {
+  const m = S.mp3, i0 = Math.round(S.start / S.frameDur), i1 = Math.round(S.end / S.frameDur);
+  if (i1 - i0 < 1) { status("La selezione è vuota.", true); return; }
+  const blob = buildCut(m, i0, Math.min(i1, m.offs.length));
+  const name = S.file.name.replace(/\.mp3$/i, "") + "_cut.mp3";
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "MP3", accept: { "audio/mpeg": [".mp3"] } }] });
+      const w = await h.createWritable(); await w.write(blob); await w.close();
+      status(`Salvato: ${h.name} (${fmt(S.end - S.start)}, ${(blob.size / 1048576).toFixed(1)} MB)`);
+      return;
+    } catch (e) { if (e.name === "AbortError") return; console.warn(e); }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  status(`Scaricato: ${name} (${fmt(S.end - S.start)}, ${(blob.size / 1048576).toFixed(1)} MB) — lo trovi nella cartella Download.`);
+}
+
+/* ----- collegamenti ----- */
+$("openBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => { loadFile(e.target.files[0]); e.target.value = ""; };
+$("playBtn").addEventListener("click", e => { e.preventDefault(); togglePlay(); });
+$("zoom").oninput = zoomToSlider;
+$("startGo").onclick = () => goTo(S.start);
+$("endGo").onclick = () => goTo(S.end);
+$("startFromHead").onclick = () => { S.start = Math.min(snap(curPos()), S.end - S.frameDur); updateUI(); };
+$("endFromHead").onclick = () => { S.end = Math.max(snap(curPos()), S.start + S.frameDur); updateUI(); };
+function bindTime(id, which) {
+  const el = $(id);
+  const apply = () => {
+    const t = parseTime(el.value);
+    if (t === null) { status("Formato tempo non valido (usa mm:ss.mmm).", true); updateUI(); return; }
+    if (which === "start") S.start = Math.min(snap(t), S.end - S.frameDur);
+    else S.end = Math.max(snap(t), S.start + S.frameDur);
+    status(""); seek(which === "start" ? S.start : S.end);
+  };
+  el.addEventListener("change", apply);
+  el.addEventListener("blur", () => updateUI());
+}
+bindTime("startIn", "start"); bindTime("endIn", "end");
+$("saveBtn").onclick = save;
+window.addEventListener("resize", updateUI);
+window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragover"); });
+window.addEventListener("dragleave", () => document.body.classList.remove("dragover"));
+window.addEventListener("drop", e => { e.preventDefault(); document.body.classList.remove("dragover"); loadFile(e.dataTransfer.files[0]); });
+document.querySelectorAll("button:not(#openBtn), input:not(#fileInput)").forEach(el => el.disabled = true);
+updateUI();
+window.__cutcut = { S, parseMp3, buildCut };   // usato per i test
+</script>
+</body>
+</html>
