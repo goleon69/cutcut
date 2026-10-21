@@ -23,10 +23,6 @@ Everything is in one file, `cutcut.html` (HTML + CSS + JavaScript, no dependenci
 - Playback uses the Web Audio API on the decoded buffer, for exact positions. The `<audio>` element is avoided because Safari seeks MP3s to estimated positions.
 - The cut works on the raw MP3 bitstream: frames are parsed, the selected range is copied, and the Xing/Info header (frame count, byte count, TOC) and LAME tag (delay/padding, length, CRC) are rewritten. A VBRI header is dropped.
 
-## Not included (yet)
-
-Fades, re-encoding, keyboard shortcuts, batch processing. Contributions welcome.
-
 ## Contributing
 
 Fork the repo, make your change in `cutcut.html`, open a pull request. Please bump the version shown next to the title.
