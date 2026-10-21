@@ -2,7 +2,7 @@
 
 A tiny MP3 trimmer that runs in your browser. Open an MP3, set where it should start and end, save. No install, works on macOS, Windows and Linux.
 
-**Use it online:** https://YOUR-USERNAME.github.io/cutcut/
+**Use it online:** https://goleon69.github.io/cutcut/
 **Or offline:** download `cutcut.html` and open it in any modern browser.
 
 ## Features
