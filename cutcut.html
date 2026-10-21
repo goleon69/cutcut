@@ -42,27 +42,36 @@
   #status.err { color: var(--end); }
   .spacer { flex: 1; }
   body.dragover .canvas-wrap { border-color: var(--accent); }
+  select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; font: inherit; cursor: pointer; }
 </style>
 </head>
 <body>
 <header>
-  <h1>cutcut <span style="font-size:12px;color:var(--muted);font-weight:normal">v1.12</span></h1>
-  <button id="openBtn" class="primary">Apri MP3</button>
+  <h1>cutcut <span style="font-size:12px;color:var(--muted);font-weight:normal">v1.13</span></h1>
+  <button id="openBtn" class="primary" data-i18n="open">Apri MP3</button>
   <input id="fileInput" type="file" accept=".mp3,audio/mpeg" hidden>
-  <span id="info">Nessun file aperto</span>
+  <span id="info" data-i18n="noFile">Nessun file aperto</span>
+  <span class="spacer"></span>
+  <select id="langSel" data-i18n-aria="language">
+    <option value="it">Italiano</option>
+    <option value="en">English</option>
+    <option value="es">Español</option>
+    <option value="zh">中文</option>
+  </select>
 </header>
 <main>
   <div class="canvas-wrap" style="margin-bottom:8px"><canvas id="overview"></canvas></div>
   <div class="canvas-wrap">
     <canvas id="wave"></canvas>
-    <div id="drop">Trascina qui un file MP3 oppure clicca “Apri MP3”</div>
+    <div id="drop" data-i18n="drop">Trascina qui un file MP3 oppure clicca “Apri MP3”</div>
   </div>
 
   <div class="row">
     <button id="playBtn" disabled style="min-width:90px"><span id="playLbl">▶ Play</span></button>
-    <div class="group"><label>Cursore</label><span id="posLabel" class="mono">00:00.000</span></div>
+    <div class="group"><label data-i18n="cursor">Cursore</label><span id="posLabel" class="mono">00:00.000</span></div>
     <div class="group">
-      <label>Zoom</label>
+      <label data-i18n="zoom">Zoom</label>
       <input id="zoom" type="range" min="0" max="1000" value="0" disabled>
       <span id="zoomLabel" class="mono">—</span>
     </div>
@@ -70,26 +79,126 @@
 
   <div class="row">
     <div class="group">
-      <span class="dot" style="background:var(--start)"></span><label>Inizio</label>
+      <span class="dot" style="background:var(--start)"></span><label data-i18n="start">Inizio</label>
       <input id="startIn" type="text" value="00:00.000" disabled>
-      <button id="startFromHead" disabled title="Metti l'inizio dove si trova il cursore">Segna l'inizio</button>
-      <button id="startGo" disabled title="Mostra l'inizio">Vai</button>
+      <button id="startFromHead" disabled data-i18n="markStart" data-i18n-title="markStartTip">Segna l'inizio</button>
+      <button id="startGo" disabled data-i18n="go" data-i18n-title="goStartTip">Vai</button>
     </div>
     <div class="group">
-      <span class="dot" style="background:var(--end)"></span><label>Fine</label>
+      <span class="dot" style="background:var(--end)"></span><label data-i18n="end">Fine</label>
       <input id="endIn" type="text" value="00:00.000" disabled>
-      <button id="endFromHead" disabled title="Metti la fine dove si trova il cursore">Segna la fine</button>
-      <button id="endGo" disabled title="Mostra la fine">Vai</button>
+      <button id="endFromHead" disabled data-i18n="markEnd" data-i18n-title="markEndTip">Segna la fine</button>
+      <button id="endGo" disabled data-i18n="go" data-i18n-title="goEndTip">Vai</button>
     </div>
-    <div class="group"><label>Durata finale</label><span id="durLabel" class="mono">—</span></div>
+    <div class="group"><label data-i18n="duration">Durata finale</label><span id="durLabel" class="mono">—</span></div>
     <div class="spacer"></div>
-    <button id="saveBtn" class="primary" disabled>Salva MP3 tagliato</button>
+    <button id="saveBtn" class="primary" disabled data-i18n="save">Salva MP3 tagliato</button>
   </div>
   <div id="status"></div>
 </main>
 
 <script>
 "use strict";
+/* ================= Lingue / Languages =================
+   To add a language: copy the "en" block, translate the values,
+   and add an <option> to #langSel in the HTML above. */
+const I18N = {
+  it: {
+    language: "Lingua", open: "Apri MP3", noFile: "Nessun file aperto",
+    drop: "Trascina qui un file MP3 oppure clicca “Apri MP3”",
+    play: "▶ Play", pause: "❚❚ Pausa", cursor: "Cursore", zoom: "Zoom", window: "finestra {d}",
+    start: "Inizio", end: "Fine", go: "Vai", duration: "Durata finale",
+    markStart: "Segna l'inizio", markStartTip: "Metti l'inizio dove si trova il cursore", goStartTip: "Mostra l'inizio",
+    markEnd: "Segna la fine", markEndTip: "Metti la fine dove si trova il cursore", goEndTip: "Mostra la fine",
+    save: "Salva MP3 tagliato", markerStart: "INIZIO", markerEnd: "FINE",
+    loading: "Caricamento di {name}…",
+    help: "Trascina i marker verde (inizio) e rosso (fine) dall'etichetta in alto o dalla maniglia in basso. Clicca sulla forma d'onda per spostare il cursore di ascolto.",
+    openErr: "Impossibile aprire il file: {msg}", noFrames: "Nessun frame MP3 valido trovato.",
+    empty: "La selezione è vuota.", badTime: "Formato tempo non valido (usa mm:ss.mmm).",
+    saved: "Salvato: {name} ({dur}, {mb} MB)",
+    downloaded: "Scaricato: {name} ({dur}, {mb} MB) — lo trovi nella cartella Download."
+  },
+  en: {
+    language: "Language", open: "Open MP3", noFile: "No file open",
+    drop: "Drop an MP3 file here or click “Open MP3”",
+    play: "▶ Play", pause: "❚❚ Pause", cursor: "Playhead", zoom: "Zoom", window: "window {d}",
+    start: "Start", end: "End", go: "Go", duration: "Final length",
+    markStart: "Set start", markStartTip: "Put the start where the playhead is", goStartTip: "Show the start",
+    markEnd: "Set end", markEndTip: "Put the end where the playhead is", goEndTip: "Show the end",
+    save: "Save trimmed MP3", markerStart: "START", markerEnd: "END",
+    loading: "Loading {name}…",
+    help: "Drag the green (start) and red (end) markers by the label at the top or the handle at the bottom. Click the waveform to move the playhead.",
+    openErr: "Could not open the file: {msg}", noFrames: "No valid MP3 frames found.",
+    empty: "The selection is empty.", badTime: "Invalid time format (use mm:ss.mmm).",
+    saved: "Saved: {name} ({dur}, {mb} MB)",
+    downloaded: "Downloaded: {name} ({dur}, {mb} MB) — you'll find it in your Downloads folder."
+  },
+  es: {
+    language: "Idioma", open: "Abrir MP3", noFile: "Ningún archivo abierto",
+    drop: "Arrastra aquí un archivo MP3 o haz clic en «Abrir MP3»",
+    play: "▶ Reproducir", pause: "❚❚ Pausa", cursor: "Cursor", zoom: "Zoom", window: "ventana {d}",
+    start: "Inicio", end: "Final", go: "Ir", duration: "Duración final",
+    markStart: "Marcar inicio", markStartTip: "Poner el inicio donde está el cursor", goStartTip: "Mostrar el inicio",
+    markEnd: "Marcar final", markEndTip: "Poner el final donde está el cursor", goEndTip: "Mostrar el final",
+    save: "Guardar MP3 recortado", markerStart: "INICIO", markerEnd: "FINAL",
+    loading: "Cargando {name}…",
+    help: "Arrastra los marcadores verde (inicio) y rojo (final) desde la etiqueta de arriba o el tirador de abajo. Haz clic en la forma de onda para mover el cursor de reproducción.",
+    openErr: "No se pudo abrir el archivo: {msg}", noFrames: "No se encontró ningún frame MP3 válido.",
+    empty: "La selección está vacía.", badTime: "Formato de tiempo no válido (usa mm:ss.mmm).",
+    saved: "Guardado: {name} ({dur}, {mb} MB)",
+    downloaded: "Descargado: {name} ({dur}, {mb} MB) — lo encontrarás en la carpeta Descargas."
+  },
+  zh: {
+    language: "语言", open: "打开 MP3", noFile: "未打开文件",
+    drop: "将 MP3 文件拖到这里，或点击“打开 MP3”",
+    play: "▶ 播放", pause: "❚❚ 暂停", cursor: "播放位置", zoom: "缩放", window: "窗口 {d}",
+    start: "开始", end: "结束", go: "跳转", duration: "剪切后时长",
+    markStart: "设为开始", markStartTip: "把开始点设在播放位置", goStartTip: "显示开始点",
+    markEnd: "设为结束", markEndTip: "把结束点设在播放位置", goEndTip: "显示结束点",
+    save: "保存剪切后的 MP3", markerStart: "开始", markerEnd: "结束",
+    loading: "正在加载 {name}…",
+    help: "拖动绿色（开始）和红色（结束）标记：可以拖顶部的标签或底部的手柄。点击波形可移动播放位置。",
+    openErr: "无法打开文件：{msg}", noFrames: "未找到有效的 MP3 帧。",
+    empty: "选区为空。", badTime: "时间格式无效（请使用 mm:ss.mmm）。",
+    saved: "已保存：{name}（{dur}，{mb} MB）",
+    downloaded: "已下载：{name}（{dur}，{mb} MB）— 在“下载”文件夹中。"
+  }
+};
+const LANG_KEY = "cutcut.lang";
+let lang = "en";
+function pickLang() {
+  try { const s = localStorage.getItem(LANG_KEY); if (I18N[s]) return s; } catch (_) {}
+  for (const l of (navigator.languages || [navigator.language || ""])) {
+    const c = String(l).slice(0, 2).toLowerCase();
+    if (I18N[c]) return c;
+  }
+  return "en";
+}
+function tr(key, args) {
+  let s = (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+  if (args) for (const k in args) s = s.split("{" + k + "}").join(args[k]);
+  return s;
+}
+function applyLang() {
+  document.documentElement.lang = lang === "zh" ? "zh-Hans" : lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    if (el.id === "info" && S.buf) return;                 // dopo il caricamento mostra i dati del file
+    const s = tr(el.dataset.i18n);
+    if (el.textContent !== s) el.textContent = s;           // aggiorna solo se cambia (Safari)
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = tr(el.dataset.i18nTitle));
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", tr(el.dataset.i18nAria)));
+  $("langSel").value = lang;
+  renderStatus();
+  updateUI();
+}
+function setLang(l) {
+  if (!I18N[l]) return;
+  lang = l;
+  try { localStorage.setItem(LANG_KEY, l); } catch (_) {}
+  applyLang();
+}
+
 /* ================= MP3 parsing (taglio senza ricodifica) ================= */
 const BITRATES = { 1: [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0],
                    2: [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0] };
@@ -141,7 +250,7 @@ function parseMp3(b) {
     offs.push(pos); lens.push(h.len);
     pos += h.len;
   }
-  if (!first) throw new Error("Nessun frame MP3 valido trovato.");
+  if (!first) { const e = new Error("No valid MP3 frames found."); e.key = "noFrames"; throw e; }
   const lastEnd = offs[offs.length - 1] + lens[lens.length - 1];
 
   // Header VBR (Xing/Info o VBRI) nel primo frame
@@ -219,12 +328,21 @@ function parseTime(str) {
   return isFinite(t) ? t : null;
 }
 const snap = t => Math.min(S.T, Math.max(0, Math.round(t / S.frameDur) * S.frameDur));
-function status(msg, err) { const el = $("status"); el.textContent = msg || ""; el.className = err ? "err" : ""; }
+// Il messaggio di stato si salva come chiave + argomenti, così si ritraduce quando cambia la lingua
+let lastStatus = { key: "", args: null, err: false };
+function status(key, args, err) { lastStatus = { key: key || "", args: args || null, err: !!err }; renderStatus(); }
+function renderStatus() {
+  const el = $("status"), { key, args, err } = lastStatus;
+  let a = args;
+  if (a && a.msgKey) a = Object.assign({}, a, { msg: tr(a.msgKey) });
+  el.textContent = key ? tr(key, a) : "";
+  el.className = err ? "err" : "";
+}
 
 async function loadFile(file) {
   if (!file) return;
   stop();
-  status("Caricamento di " + file.name + "…");
+  status("loading", { name: file.name });
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mp3 = parseMp3(bytes);
@@ -237,11 +355,11 @@ async function loadFile(file) {
     $("info").textContent = `${file.name} · ${fmt(S.T)} · ${mp3.cbr ? "" : "VBR ~"}${mp3.avgKbps} kbps · ${(mp3.sr/1000).toFixed(1)} kHz`;
     $("drop").style.display = "none";
     document.querySelectorAll("button, input").forEach(el => el.disabled = false);
-    status("Trascina i marker verde (inizio) e rosso (fine) dall'etichetta in alto o dalla maniglia in basso. Clicca sulla forma d'onda per spostare il cursore di ascolto.");
+    status("help");
     updateUI();
   } catch (e) {
     console.error(e);
-    status("Impossibile aprire il file: " + (e.message || e), true);
+    status("openErr", e.key ? { msgKey: e.key } : { msg: e.message || String(e) }, true);
   }
 }
 
@@ -321,8 +439,8 @@ function drawMain() {
     g.fillRect(hx + 4 * r, wH - hh + 6 * r, r, hh - 12 * r);
     g.fillRect(hx + 8 * r, wH - hh + 6 * r, r, hh - 12 * r);
   };
-  marker(S.start, css("--start"), "INIZIO", false);
-  marker(S.end, css("--end"), "FINE", true);
+  marker(S.start, css("--start"), tr("markerStart"), false);
+  marker(S.end, css("--end"), tr("markerEnd"), true);
   const hx = X(S.head);
   if (hx >= 0 && hx <= W) { g.fillStyle = css("--head"); g.fillRect(Math.round(hx), 0, r, wH); }
 }
@@ -351,8 +469,8 @@ function updateUI() {
     if (document.activeElement !== $("endIn")) $("endIn").value = fmt(S.end);
     $("durLabel").textContent = fmt(S.end - S.start);
     $("posLabel").textContent = fmt(S.head);
-    $("zoomLabel").textContent = "finestra " + (S.viewDur >= 10 ? fmt(S.viewDur).slice(0, 5) : S.viewDur.toFixed(2) + " s");
-    const lbl = isPlaying() ? "❚❚ Pausa" : "▶ Play";      // aggiorna solo se cambia (altrimenti Safari perde il clic)
+    $("zoomLabel").textContent = tr("window", { d: S.viewDur >= 10 ? fmt(S.viewDur).slice(0, 5) : S.viewDur.toFixed(2) + " s" });
+    const lbl = isPlaying() ? tr("pause") : tr("play");      // aggiorna solo se cambia (altrimenti Safari perde il clic)
     if ($("playLbl").textContent !== lbl) $("playLbl").textContent = lbl;
   });
 }
@@ -495,14 +613,14 @@ function tick() {
 /* ----- salvataggio ----- */
 async function save() {
   const m = S.mp3, i0 = Math.round(S.start / S.frameDur), i1 = Math.round(S.end / S.frameDur);
-  if (i1 - i0 < 1) { status("La selezione è vuota.", true); return; }
+  if (i1 - i0 < 1) { status("empty", null, true); return; }
   const blob = buildCut(m, i0, Math.min(i1, m.offs.length));
   const name = S.file.name.replace(/\.mp3$/i, "") + "_cut.mp3";
   if (window.showSaveFilePicker) {
     try {
       const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "MP3", accept: { "audio/mpeg": [".mp3"] } }] });
       const w = await h.createWritable(); await w.write(blob); await w.close();
-      status(`Salvato: ${h.name} (${fmt(S.end - S.start)}, ${(blob.size / 1048576).toFixed(1)} MB)`);
+      status("saved", { name: h.name, dur: fmt(S.end - S.start), mb: (blob.size / 1048576).toFixed(1) });
       return;
     } catch (e) { if (e.name === "AbortError") return; console.warn(e); }
   }
@@ -510,7 +628,7 @@ async function save() {
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  status(`Scaricato: ${name} (${fmt(S.end - S.start)}, ${(blob.size / 1048576).toFixed(1)} MB) — lo trovi nella cartella Download.`);
+  status("downloaded", { name, dur: fmt(S.end - S.start), mb: (blob.size / 1048576).toFixed(1) });
 }
 
 /* ----- collegamenti ----- */
@@ -525,10 +643,10 @@ $("endFromHead").onclick = () => { S.end = Math.max(snap(curPos()), S.start + S.
 function bindTime(id, which) {
   const el = $(id);
   const apply = () => {
-    const t = parseTime(el.value);
-    if (t === null) { status("Formato tempo non valido (usa mm:ss.mmm).", true); updateUI(); return; }
-    if (which === "start") S.start = Math.min(snap(t), S.end - S.frameDur);
-    else S.end = Math.max(snap(t), S.start + S.frameDur);
+    const v = parseTime(el.value);
+    if (v === null) { status("badTime", null, true); updateUI(); return; }
+    if (which === "start") S.start = Math.min(snap(v), S.end - S.frameDur);
+    else S.end = Math.max(snap(v), S.start + S.frameDur);
     status(""); seek(which === "start" ? S.start : S.end);
   };
   el.addEventListener("change", apply);
@@ -541,7 +659,9 @@ window.addEventListener("dragover", e => { e.preventDefault(); document.body.cla
 window.addEventListener("dragleave", () => document.body.classList.remove("dragover"));
 window.addEventListener("drop", e => { e.preventDefault(); document.body.classList.remove("dragover"); loadFile(e.dataTransfer.files[0]); });
 document.querySelectorAll("button:not(#openBtn), input:not(#fileInput)").forEach(el => el.disabled = true);
-updateUI();
+$("langSel").onchange = e => setLang(e.target.value);
+lang = pickLang();
+applyLang();
 window.__cutcut = { S, parseMp3, buildCut };   // usato per i test
 </script>
 </body>

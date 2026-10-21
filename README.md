@@ -14,6 +14,7 @@ A tiny MP3 trimmer that runs in your browser. Open an MP3, set where it should s
 - Keeps ID3v2, ID3v1 and APE tags; updates the Xing/Info and LAME headers
 - Saves as `<name>_cut.mp3`
 - Everything happens locally: your audio never leaves your computer
+- Interface in English, Italian, Spanish and Chinese (picked from your browser language, switchable from the menu at the top right)
 
 ## How it works
 
@@ -30,6 +31,8 @@ Fades, re-encoding, keyboard shortcuts, batch processing. Contributions welcome.
 
 Fork the repo, make your change in `cutcut.html`, open a pull request. Please bump the version shown next to the title.
 
+**New language?** In `cutcut.html`, copy the `en` block inside `I18N`, translate the values, and add an `<option>` to the language menu (`#langSel`).
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE). You can use, study, change and share cutcut; modified versions you distribute must also be released under GPL-3.0.
@@ -38,4 +41,4 @@ Copyright (C) 2026 Leonardo Gon
 
 ---
 
-*Italiano:* cutcut è un piccolo programma per tagliare l'inizio e la fine di un file MP3, senza perdita di qualità. Si apre nel browser, senza installare niente.
+*Italiano:* cutcut è un piccolo programma per tagliare l'inizio e la fine di un file MP3, senza perdita di qualità. Si apre nel browser, senza installare niente. L'interfaccia è disponibile anche in italiano.
