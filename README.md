@@ -1,6 +1,6 @@
 # cutcut
 
-A tiny MP3 trimmer that runs in your browser. Open an MP3, set where it should start and end, save. No install, works on macOS, Windows, Linux and on phones.
+A tiny MP3 trimmer that runs in your browser. Open an MP3, set where it should start and end, save. No install, works on macOS, Windows and Linux, and on iOS and Android phones and tablets.
 
 **Use it online:** https://goleon69.github.io/cutcut/
 **Or offline:** download `cutcut.html` and open it in any modern browser.
@@ -39,4 +39,4 @@ Copyright (C) 2026 Leonardo Gon
 
 ---
 
-*Italiano:* cutcut è un piccolo programma per tagliare l'inizio e la fine di un file MP3, senza perdita di qualità. Si apre nel browser, anche sul telefono, senza installare niente. L'interfaccia è disponibile anche in italiano.
+*Italiano:* cutcut è un piccolo programma per tagliare l'inizio e la fine di un file MP3, senza perdita di qualità. Si apre nel browser su Mac, Windows, Linux, iPhone/iPad e Android, senza installare niente. L'interfaccia è disponibile anche in italiano.
